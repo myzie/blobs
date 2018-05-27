@@ -3,13 +3,9 @@ package main
 import (
 	"os"
 
-	loads "github.com/go-openapi/loads"
-	"github.com/go-openapi/runtime"
-	flags "github.com/jessevdk/go-flags"
+	"github.com/myzie/env"
+	"github.com/namsral/flag"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/myzie/blobs/gen/server/restapi"
-	"github.com/myzie/blobs/gen/server/restapi/operations"
 )
 
 func init() {
@@ -20,33 +16,15 @@ func init() {
 
 func main() {
 
-	opts := struct {
-		Host string `long:"host" default:"127.0.0.1" description:"Host address to use for listening"`
-		Port int    `long:"port" default:"8080" description:"Port to use for listening"`
-	}{}
+	var sizeLimit string
+	flag.StringVar(&sizeLimit, "blob-size-limit", "100M", "Blob size limit")
 
-	if _, err := flags.Parse(&opts); err != nil {
-		os.Exit(1)
-	}
+	e := env.Must()
+	e.Settings.Log()
 
-	spec, err := loads.Embedded(restapi.SwaggerJSON, restapi.FlatSwaggerJSON)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	log.Infof("Blob size limit: %s", sizeLimit)
 
-	api := operations.NewBlobsAPI(spec)
-	api.Logger = log.Infof
-	server := restapi.NewServer(api)
-	server.Host = opts.Host
-	server.Port = opts.Port
-	defer server.Shutdown()
-
-	service := &service{}
-	api.JSONConsumer = runtime.JSONConsumer()
-	api.JSONProducer = runtime.JSONProducer()
-	api.ListBlobsHandler = operations.ListBlobsHandlerFunc(service.ListBlobs)
-
-	if err := server.Serve(); err != nil {
-		log.Fatalln(err)
-	}
+	newBlobsService(e, sizeLimit)
+	err := e.Run()
+	log.Fatal(err)
 }
