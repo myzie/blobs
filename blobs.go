@@ -6,19 +6,19 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
-	"github.com/myzie/env"
+	"github.com/myzie/base"
 )
 
 var nameRegex = regexp.MustCompile(`^[0-9A-Za-z_][A-Za-z0-9-_ ]*(\.[a-zA-Z0-9]+)?$`)
 
 type blobsService struct {
-	env *env.Env
+	*base.Base
 }
 
 // newBlobsService returns an HTTP interface for blobs
-func newBlobsService(environ *env.Env, sizeLimit string) *blobsService {
-	svc := &blobsService{env: environ}
-	group := environ.Echo.Group("/blobs")
+func newBlobsService(base *base.Base, sizeLimit string) *blobsService {
+	svc := &blobsService{Base: base}
+	group := svc.Echo.Group("/blobs")
 	group.Use(middleware.BodyLimit(sizeLimit))
 	group.GET("", svc.List)
 	group.GET("/*", svc.Get)
