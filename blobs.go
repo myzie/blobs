@@ -2,15 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	minio "github.com/minio/minio-go"
 	"github.com/myzie/base"
 	uuid "github.com/satori/go.uuid"
 	log "github.com/sirupsen/logrus"
 )
+
+const MaxUploadSize = 100 * 1024 * 1024
 
 type blobsService struct {
 	*base.Base
@@ -73,50 +77,78 @@ func (svc *blobsService) Put(c echo.Context) error {
 }
 
 func (svc *blobsService) Post(c echo.Context) error {
-	// file, err := c.FormFile("file")
-	// if err != nil {
-	// 	return c.JSON(BadRequest, errorView{"Form file missing"})
-	// }
-	// src, err := file.Open()
-	// if err != nil {
-	// 	return c.JSON(BadRequest, errorView{"Form file error"})
-	// }
-	// defer src.Close()
-	// return svc.soundUpload(c, src)
-	return nil
+
+	var attrs BlobAttributes
+	if err := c.Bind(&attrs); err != nil {
+		return c.JSON(BadRequest, errorView{"Failed to bind attributes"})
+	}
+
+	attrs.Normalize()
+
+	if err := attrs.Validate(); err != nil {
+		return c.JSON(BadRequest, errorView{err.Error()})
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(BadRequest, errorView{"Form file missing"})
+	}
+	src, err := file.Open()
+	if err != nil {
+		return c.JSON(BadRequest, errorView{"Form file error"})
+	}
+	defer src.Close()
+
+	reader := io.LimitReader(src, attrs.Size)
+
+	opts := minio.PutObjectOptions{
+		ContentType:        "application/octet-stream",
+		ContentDisposition: fmt.Sprintf(`attachment; filename="%s"`, attrs.Name),
+	}
+	bucket := svc.Settings.ObjectStore.Bucket
+	n, err := svc.ObjectStore.PutObject(bucket, attrs.Key(), reader, attrs.Size, opts)
+	if err != nil {
+		log.WithError(err).Error("Error saving file to bucket")
+		return c.JSON(InternalServerError, errorView{"Error saving file"})
+	}
+	if n != attrs.Size {
+		log.Error("Uploaded file size incorrect")
+		return c.JSON(InternalServerError, errorView{"Error saving file"})
+	}
+	log.WithFields(log.Fields{
+		"key":      attrs.Key(),
+		"size":     attrs.Size,
+		"filename": attrs.Name,
+	}).Info("S3 upload complete")
+
+	return c.JSON(OK, errorView{})
 }
 
 func (svc *blobsService) Delete(c echo.Context) error {
-	// soundPath := "/" + c.ParamValues()[0]
-	// s, err := svc.App.SoundStore().Get(app.SoundKey{Path: soundPath})
-	// if err != nil {
-	// 	return c.JSON(NotFound, errorView{"Sound not found"})
-	// }
-	// if err = svc.App.SoundStore().Delete(s); err != nil {
-	// 	log.WithError(err).Error("Sound delete failed")
-	// 	return c.JSON(InternalServerError, errorView{"Sound delete failed"})
-	// }
+	path := "/" + c.ParamValues()[0]
+	blob := &Blob{}
+	if err := svc.DB.Where("path = ?", path).First(blob).Error; err != nil {
+		return c.JSON(NotFound, errorView{"Blob not found"})
+	}
+	if err := svc.DB.Delete(blob).Error; err != nil {
+		return c.JSON(InternalServerError, errorView{"Failed to delete blob"})
+	}
 	return c.NoContent(NoContent)
 }
 
 func (svc *blobsService) List(c echo.Context) error {
-	// query := app.SoundQuery{
-	// 	Offset:    0,
-	// 	Limit:     100,
-	// 	PathBegin: "",
-	// 	PathEnd:   "",
-	// }
-	// sounds, err := svc.App.SoundStore().List(query)
-	// if err != nil {
-	// 	log.WithError(err).Error("List sounds failed")
-	// 	return c.JSON(InternalServerError, errorView{"List sounds failed"})
-	// }
-	// views := make([]*SoundView, len(sounds))
-	// for i, sound := range sounds {
-	// 	views[i] = soundView(sound)
-	// }
-	// return c.JSON(OK, views)
-	return nil
+
+	offset := 0
+	limit := 1000
+	orderBy := "path"
+
+	var blobs []*Blob
+	err := svc.DB.Order(orderBy).Offset(offset).Limit(limit).Find(&blobs).Error
+	if err != nil {
+		return c.JSON(InternalServerError, errorView{"Failed to list blobs"})
+	}
+
+	return c.JSON(OK, blobs)
 }
 
 func (svc *blobsService) soundUpload(c echo.Context, fileReader io.Reader) error {
