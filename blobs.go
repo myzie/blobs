@@ -1,15 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
-	"regexp"
 
+	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/myzie/base"
+	uuid "github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 )
-
-var nameRegex = regexp.MustCompile(`^[0-9A-Za-z_][A-Za-z0-9-_ ]*(\.[a-zA-Z0-9]+)?$`)
 
 type blobsService struct {
 	*base.Base
@@ -29,22 +30,46 @@ func newBlobsService(base *base.Base, sizeLimit string) *blobsService {
 }
 
 func (svc *blobsService) Get(c echo.Context) error {
-	// path := "/" + c.ParamValues()[0]
-	// s, err := svc.App.SoundStore().Get(app.SoundKey{Path: path})
-	// if err != nil {
-	// 	if err.Error() == "record not found" {
-	// 		return c.JSON(NotFound, errorView{"Sound not found"})
-	// 	}
-	// 	log.WithError(err).Error("GetSoundByPath failed")
-	// 	return c.JSON(InternalServerError, errorView{"Sound not found"})
-	// }
-	// return c.JSON(OK, soundView(s))
-	return nil
+
+	path := "/" + c.ParamValues()[0]
+	blob := &Blob{}
+
+	if err := svc.DB.Where("path = ?", path).First(blob).Error; err != nil {
+		if err.Error() == "record not found" {
+			return c.JSON(NotFound, errorView{"Blob not found"})
+		}
+		log.WithError(err).Error("Get failed")
+		return c.JSON(InternalServerError, errorView{"Blob not found"})
+	}
+	return c.JSON(OK, blob)
 }
 
 func (svc *blobsService) Put(c echo.Context) error {
-	// return svc.soundUpload(c, c.Request().Body)
-	return nil
+
+	var attrs BlobAttributes
+	if err := c.Bind(&attrs); err != nil {
+		return c.JSON(BadRequest, errorView{"Failed to bind attributes"})
+	}
+
+	propJSON, err := json.Marshal(attrs.Properties)
+	if err != nil {
+		return c.JSON(BadRequest, errorView{"Bad properties"})
+	}
+	log.Infof("Blob attributes: %+v properties: %s", attrs, string(propJSON))
+
+	b := &Blob{
+		Name:       attrs.Name,
+		Path:       attrs.Path,
+		Extension:  attrs.Extension,
+		Properties: postgres.Jsonb{RawMessage: json.RawMessage(propJSON)},
+	}
+	b.ID = uuid.Must(uuid.NewV4()).String()
+
+	if err := svc.DB.Save(b).Error; err != nil {
+		log.WithError(err).Error("Failed to save blob")
+		return c.JSON(InternalServerError, errorView{"Failed to update blob"})
+	}
+	return c.JSON(OK, b)
 }
 
 func (svc *blobsService) Post(c echo.Context) error {

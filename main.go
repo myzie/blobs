@@ -15,6 +15,10 @@ func main() {
 
 	service := newBlobsService(base.Must(), sizeLimit)
 
+	if err := service.DB.AutoMigrate(Blob{}).Error; err != nil {
+		log.Fatal(err)
+	}
+
 	if err := service.Run(); err != nil {
 		log.Fatal(err)
 	}
