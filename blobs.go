@@ -14,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// MaxUploadSize defines the max file size in bytes for uploads
 const MaxUploadSize = 100 * 1024 * 1024
 
 type blobsService struct {
@@ -84,7 +85,6 @@ func (svc *blobsService) Post(c echo.Context) error {
 	}
 
 	attrs.Normalize()
-
 	if err := attrs.Validate(); err != nil {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
@@ -101,6 +101,12 @@ func (svc *blobsService) Post(c echo.Context) error {
 
 	reader := io.LimitReader(src, attrs.Size)
 
+	log.WithFields(log.Fields{
+		"name": attrs.Name,
+		"size": attrs.Size,
+		"key":  attrs.Key(),
+	}).Info("Upload starting")
+
 	opts := minio.PutObjectOptions{
 		ContentType:        "application/octet-stream",
 		ContentDisposition: fmt.Sprintf(`attachment; filename="%s"`, attrs.Name),
@@ -115,11 +121,12 @@ func (svc *blobsService) Post(c echo.Context) error {
 		log.Error("Uploaded file size incorrect")
 		return c.JSON(InternalServerError, errorView{"Error saving file"})
 	}
+
 	log.WithFields(log.Fields{
 		"key":      attrs.Key(),
 		"size":     attrs.Size,
 		"filename": attrs.Name,
-	}).Info("S3 upload complete")
+	}).Info("Upload complete")
 
 	return c.JSON(OK, errorView{})
 }

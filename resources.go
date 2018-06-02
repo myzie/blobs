@@ -10,11 +10,9 @@ import (
 // BlobAttributes sent by a client
 type BlobAttributes struct {
 	Name       string                 `json:"name" form:"name"`
-	Extension  string                 `json:"extension" form:"extension"`
 	Path       string                 `json:"path" form:"path"`
 	Hash       string                 `json:"hash" form:"hash"`
 	Size       int64                  `json:"size" form:"size"`
-	Tags       []string               `json:"tags" form:"tags"`
 	Properties map[string]interface{} `json:"properites" form:"properties"`
 }
 
@@ -54,7 +52,7 @@ func (attrs *BlobAttributes) Validate() error {
 
 // Key returns the path within the destination bucket for this upload
 func (attrs *BlobAttributes) Key() string {
-	return attrs.Path[1:] + "/" + attrs.Name
+	return attrs.Path[1:]
 }
 
 // MarshalProperties returns the Properties field marshaled as JSON
