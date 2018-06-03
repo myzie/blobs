@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// BlobAttributes sent by a client
-type BlobAttributes struct {
+// BlobUploadAttributes contains fields sent by a client in an upload form
+type BlobUploadAttributes struct {
 	Name       string                 `json:"name" form:"name"`
 	Path       string                 `json:"path" form:"path"`
 	Hash       string                 `json:"hash" form:"hash"`
@@ -18,7 +18,7 @@ type BlobAttributes struct {
 }
 
 // Normalize attributes to standard form. Especially the path format.
-func (attrs *BlobAttributes) Normalize() {
+func (attrs *BlobUploadAttributes) Normalize() {
 	if attrs.Path == "" && attrs.Name != "" {
 		attrs.Path = "/" + attrs.Name
 	}
@@ -32,7 +32,7 @@ func (attrs *BlobAttributes) Normalize() {
 }
 
 // Validate checks whether the attributes are valid
-func (attrs *BlobAttributes) Validate() error {
+func (attrs *BlobUploadAttributes) Validate() error {
 	if attrs.Name == "" {
 		return errors.New("Name was not specified")
 	}
@@ -52,22 +52,38 @@ func (attrs *BlobAttributes) Validate() error {
 }
 
 // Key returns the path within the destination bucket for this upload
-func (attrs *BlobAttributes) Key() string {
+func (attrs *BlobUploadAttributes) Key() string {
 	return attrs.Path[1:]
 }
 
 // Extension returns the object file extension
-func (attrs *BlobAttributes) Extension() string {
+func (attrs *BlobUploadAttributes) Extension() string {
 	return filepath.Ext(attrs.Name)
 }
 
 // MarshalProperties returns the Properties field marshaled as JSON
-func (attrs *BlobAttributes) MarshalProperties() ([]byte, error) {
+func (attrs *BlobUploadAttributes) MarshalProperties() ([]byte, error) {
 	return json.Marshal(attrs.Properties)
 }
 
-// BlobUpdate sent by a client
-type BlobUpdate struct {
+// BlobUpdateAttributes are sent by a client to update blob properties
+type BlobUpdateAttributes struct {
 	Name       string                 `json:"name" form:"name"`
 	Properties map[string]interface{} `json:"properties" form:"properties"`
+}
+
+// Validate checks whether the attributes are valid
+func (attrs *BlobUpdateAttributes) Validate() error {
+	if attrs.Name == "" {
+		return errors.New("Name was not specified")
+	}
+	if strings.Contains(attrs.Name, "/") {
+		return errors.New("Name must not contain '/'")
+	}
+	return nil
+}
+
+// MarshalProperties returns the Properties field marshaled as JSON
+func (attrs *BlobUpdateAttributes) MarshalProperties() ([]byte, error) {
+	return json.Marshal(attrs.Properties)
 }

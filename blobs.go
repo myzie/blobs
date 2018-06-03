@@ -70,16 +70,17 @@ func (svc *blobsService) Get(c echo.Context) error {
 
 func (svc *blobsService) Put(c echo.Context) error {
 
-	var attrs BlobAttributes
+	path := "/" + c.ParamValues()[0]
+
+	var attrs BlobUpdateAttributes
 	if err := c.Bind(&attrs); err != nil {
-		return c.JSON(BadRequest, errorView{"Failed to bind attributes"})
+		return c.JSON(BadRequest, errorView{"Bad attributes"})
 	}
-	attrs.Normalize()
 	if err := attrs.Validate(); err != nil {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
 
-	blob, err := svc.getBlobWithPath(attrs.Path)
+	blob, err := svc.getBlobWithPath(path)
 	if err != nil {
 		return c.JSON(NotFound, errorView{"Not found"})
 	}
@@ -102,7 +103,7 @@ func (svc *blobsService) Put(c echo.Context) error {
 
 func (svc *blobsService) Post(c echo.Context) error {
 
-	var attrs BlobAttributes
+	var attrs BlobUploadAttributes
 	if err := c.Bind(&attrs); err != nil {
 		return c.JSON(BadRequest, errorView{"Failed to bind attributes"})
 	}

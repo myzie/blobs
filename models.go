@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/jinzhu/gorm/dialects/postgres"
@@ -59,8 +58,6 @@ func (b *Blob) Validate() []error {
 		fail("Invalid path: too long")
 	} else if b.Path[0] != '/' {
 		fail("Invalid path: does not start with /")
-	} else if !strings.HasSuffix(b.Path, b.Name) {
-		fail("Invalid path: does not end with name")
 	}
 
 	propBytes := []byte(b.Properties.RawMessage)

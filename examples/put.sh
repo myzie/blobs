@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set -e
-set -x
 
 FILE="$1"
 JSON="$2"
