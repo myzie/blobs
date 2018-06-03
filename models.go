@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ type Blob struct {
 	Path       string    `gorm:"size:250;unique_index"`
 	Hash       string    `gorm:"size:250"`
 	Properties postgres.Jsonb
+}
+
+// Key used when storing the blob
+func (b *Blob) Key() string {
+	return fmt.Sprintf("%s/%s%s", b.ID, b.ID, b.Extension)
 }
 
 // Validate the blob

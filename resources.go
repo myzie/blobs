@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,7 +14,7 @@ type BlobAttributes struct {
 	Path       string                 `json:"path" form:"path"`
 	Hash       string                 `json:"hash" form:"hash"`
 	Size       int64                  `json:"size" form:"size"`
-	Properties map[string]interface{} `json:"properites" form:"properties"`
+	Properties map[string]interface{} `json:"properties" form:"properties"`
 }
 
 // Normalize attributes to standard form. Especially the path format.
@@ -55,7 +56,18 @@ func (attrs *BlobAttributes) Key() string {
 	return attrs.Path[1:]
 }
 
+// Extension returns the object file extension
+func (attrs *BlobAttributes) Extension() string {
+	return filepath.Ext(attrs.Name)
+}
+
 // MarshalProperties returns the Properties field marshaled as JSON
 func (attrs *BlobAttributes) MarshalProperties() ([]byte, error) {
 	return json.Marshal(attrs.Properties)
+}
+
+// BlobUpdate sent by a client
+type BlobUpdate struct {
+	Name       string                 `json:"name" form:"name"`
+	Properties map[string]interface{} `json:"properties" form:"properties"`
 }
