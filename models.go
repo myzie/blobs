@@ -21,6 +21,7 @@ type Blob struct {
 	UpdatedAt  time.Time `gorm:"index"`
 	CreatedBy  string    `gorm:"size:50;index"`
 	UpdatedBy  string    `gorm:"size:50;index"`
+	Context    string    `gorm:"size:100;index"`
 	Name       string    `gorm:"size:100"`
 	Extension  string    `gorm:"size:100"`
 	Path       string    `gorm:"size:250;unique_index"`

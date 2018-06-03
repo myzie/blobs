@@ -151,6 +151,7 @@ func (svc *blobsService) Post(c echo.Context) error {
 			Extension:  blobExt,
 			Path:       attrs.Path,
 			Hash:       "", // TODO
+			Context:    "",
 			Properties: postgres.Jsonb{RawMessage: json.RawMessage(propJSON)},
 		}
 
@@ -277,9 +278,12 @@ func (svc *blobsService) List(c echo.Context) error {
 		params.OrderBy = "path"
 	}
 
+	context := &Blob{Context: ""}
+
 	var blobs []*Blob
 
-	err := svc.DB.Order(params.OrderBy).
+	err := svc.DB.Where(context).
+		Order(params.OrderBy).
 		Offset(params.Offset).
 		Limit(params.Limit).
 		Find(&blobs).Error
