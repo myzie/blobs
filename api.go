@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	minio "github.com/minio/minio-go"
 	"github.com/myzie/base"
+	"github.com/myzie/blobs/store"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -18,11 +20,12 @@ const MaxUploadSize = 100 * 1024 * 1024
 
 type blobsService struct {
 	*base.Base
+	Store store.ObjectStore
 }
 
 // newBlobsService returns an HTTP interface for blobs
-func newBlobsService(base *base.Base, sizeLimit string) *blobsService {
-	svc := &blobsService{Base: base}
+func newBlobsService(base *base.Base, store store.ObjectStore, sizeLimit string) *blobsService {
+	svc := &blobsService{Base: base, Store: store}
 	group := svc.Echo.Group("/blobs")
 	group.Use(middleware.BodyLimit(sizeLimit))
 	group.GET("", svc.List)
@@ -42,12 +45,7 @@ func (svc *blobsService) getBlobWithPath(path string) (*Blob, error) {
 }
 
 func (svc *blobsService) updateBlob(blob *Blob) error {
-	fields := []string{
-		"name",
-		"path",
-		"extension",
-		"properties",
-	}
+	fields := []string{"name", "extension", "properties"}
 	return svc.DB.Model(blob).Select(fields).Updates(blob).Error
 }
 
@@ -56,16 +54,32 @@ func (svc *blobsService) saveBlob(blob *Blob) error {
 }
 
 func (svc *blobsService) Get(c echo.Context) error {
+
+	// Look up blob at the specified path
 	path := "/" + c.ParamValues()[0]
 	blob, err := svc.getBlobWithPath(path)
 	if err != nil {
+		log.Infof("404 error: %+v", reflect.TypeOf(err))
 		if err.Error() == "record not found" {
 			return c.JSON(NotFound, errorView{"Blob not found"})
 		}
 		log.WithError(err).Error("Get failed")
-		return c.JSON(InternalServerError, errorView{"Blob not found"})
+		return c.JSON(InternalServerError, errorView{"Failed to look up Blob"})
 	}
-	return c.JSON(OK, blob)
+
+	// Return the blob metadata if JSON content was requested
+	contentType := c.Request().Header.Get("Content-Type")
+	if contentType == "application/json" {
+		return c.JSON(OK, blob)
+	}
+
+	// Otherwise return the object itself
+	getOpts := minio.GetObjectOptions{}
+	obj, err := svc.Store.Get(blob.Key(), getOpts)
+	if err != nil {
+		return c.JSON(InternalServerError, errorView{"Failed to get object"})
+	}
+	return c.Stream(OK, "application/octet-stream", obj)
 }
 
 func (svc *blobsService) Put(c echo.Context) error {
@@ -191,8 +205,7 @@ func (svc *blobsService) Post(c echo.Context) error {
 		ContentType:        "application/octet-stream",
 		ContentDisposition: fmt.Sprintf(`attachment; filename="%s"`, attrs.Name),
 	}
-	bucket := svc.Settings.ObjectStore.Bucket
-	n, err := svc.ObjectStore.PutObject(bucket, blob.Key(), reader, attrs.Size, opts)
+	n, err := svc.Store.Put(blob.Key(), reader, attrs.Size, opts)
 	if err != nil {
 		log.WithError(err).Error("Error saving file to bucket")
 		return c.JSON(InternalServerError, errorView{"Error saving file"})
@@ -212,28 +225,68 @@ func (svc *blobsService) Post(c echo.Context) error {
 }
 
 func (svc *blobsService) Delete(c echo.Context) error {
+
+	// Look up blob at the specified path
 	path := "/" + c.ParamValues()[0]
 	blob := &Blob{}
 	if err := svc.DB.Where("path = ?", path).First(blob).Error; err != nil {
 		return c.JSON(NotFound, errorView{"Blob not found"})
 	}
+
+	// Remove object from S3
+	if err := svc.Store.Remove(blob.Key()); err != nil {
+		log.WithError(err).Error("Failed to delete object")
+		return c.JSON(InternalServerError, errorView{"Failed to delete object"})
+	}
+
+	// Remove database entry
 	if err := svc.DB.Delete(blob).Error; err != nil {
+		log.WithError(err).Error("Failed to delete blob")
 		return c.JSON(InternalServerError, errorView{"Failed to delete blob"})
 	}
+
+	log.WithFields(log.Fields{"id": blob.ID, "path": path, "name": blob.Name}).
+		Info("Blob deleted")
+
 	return c.NoContent(NoContent)
+}
+
+type listQueryParameters struct {
+	Offset  int    `query:"offset"`
+	Limit   int    `query:"limit"`
+	OrderBy string `query:"order_by"`
 }
 
 func (svc *blobsService) List(c echo.Context) error {
 
-	offset := 0
-	limit := 1000
-	orderBy := "path"
-
-	var blobs []*Blob
-	err := svc.DB.Order(orderBy).Offset(offset).Limit(limit).Find(&blobs).Error
-	if err != nil {
-		return c.JSON(InternalServerError, errorView{"Failed to list blobs"})
+	var params listQueryParameters
+	if err := c.Bind(&params); err != nil {
+		return c.JSON(BadRequest, errorView{"Bad parameters"})
 	}
 
+	if params.Offset < 0 {
+		return c.JSON(BadRequest, errorView{"Invalid offset"})
+	}
+	if params.Limit < 0 {
+		return c.JSON(BadRequest, errorView{"Invalid limit"})
+	}
+	if params.Limit == 0 {
+		params.Limit = 1000
+	}
+	if params.OrderBy == "" {
+		params.OrderBy = "path"
+	}
+
+	var blobs []*Blob
+
+	err := svc.DB.Order(params.OrderBy).
+		Offset(params.Offset).
+		Limit(params.Limit).
+		Find(&blobs).Error
+
+	if err != nil {
+		log.WithError(err).Error("Blob query failed")
+		return c.JSON(InternalServerError, errorView{"Blob query failed"})
+	}
 	return c.JSON(OK, blobs)
 }
