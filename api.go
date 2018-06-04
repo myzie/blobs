@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -196,7 +197,8 @@ func (svc *blobsService) Post(c echo.Context) error {
 	}
 	defer src.Close()
 
-	reader := io.LimitReader(src, attrs.Size)
+	sha256 := sha256.New()
+	reader := io.TeeReader(io.LimitReader(src, attrs.Size), sha256)
 
 	log.WithFields(log.Fields{
 		"name":       attrs.Name,
@@ -220,10 +222,13 @@ func (svc *blobsService) Post(c echo.Context) error {
 		return c.JSON(InternalServerError, errorView{"Error saving file"})
 	}
 
+	sha256Hash := fmt.Sprintf("%x", sha256.Sum(nil))
+
 	log.WithFields(log.Fields{
 		"key":      attrs.Key(),
 		"size":     attrs.Size,
 		"filename": attrs.Name,
+		"sha256":   sha256Hash,
 	}).Info("Upload complete")
 
 	return c.JSON(OK, errorView{})
