@@ -7,5 +7,6 @@ if [[ $FILE != "/"* ]]; then
 fi
 
 curl -s \
-    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $BLOBS_TOKEN" \
+    -H "Content-Type: application/json"     \
     "http://localhost:8080/blobs$FILE" | jq '.'

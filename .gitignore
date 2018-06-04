@@ -5,6 +5,10 @@
 *.so
 *.dylib
 
+jwt.key
+jwt.key.pub
+cmd/blobsuser/blobsuser
+
 # Test binary, build with `go test -c`
 *.test
 

@@ -31,7 +31,7 @@ type Blob struct {
 
 // Key used when storing the blob
 func (b *Blob) Key() string {
-	return fmt.Sprintf("%s/%s%s", b.ID, b.ID, b.Extension)
+	return fmt.Sprintf("%s/%s/%s%s", b.Context, b.ID, b.ID, b.Extension)
 }
 
 // Validate the blob
@@ -41,6 +41,11 @@ func (b *Blob) Validate() []error {
 
 	fail := func(msg string) {
 		errs = append(errs, errors.New(msg))
+	}
+
+	// Context validation
+	if len(b.Context) == 0 {
+		fail("Invalid context: empty")
 	}
 
 	// Name validation

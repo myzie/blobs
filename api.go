@@ -25,14 +25,18 @@ type blobsService struct {
 
 // newBlobsService returns an HTTP interface for blobs
 func newBlobsService(base *base.Base, store store.ObjectStore, sizeLimit string) *blobsService {
+
 	svc := &blobsService{Base: base, Store: store}
+
 	group := svc.Echo.Group("/blobs")
+	group.Use(svc.JWTMiddleware())
 	group.Use(middleware.BodyLimit(sizeLimit))
 	group.GET("", svc.List)
 	group.GET("/*", svc.Get)
 	group.PUT("/*", svc.Put)
 	group.POST("", svc.Post)
 	group.DELETE("/*", svc.Delete)
+
 	return svc
 }
 
