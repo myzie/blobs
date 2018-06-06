@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/middleware"
 	minio "github.com/minio/minio-go"
 	"github.com/myzie/base"
+	"github.com/myzie/blobs/db"
 	"github.com/myzie/blobs/store"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,19 +20,31 @@ import (
 // MaxUploadSize defines the max file size in bytes for uploads
 const MaxUploadSize = 100 * 1024 * 1024
 
+type blobsServiceOpts struct {
+	Base      *base.Base
+	Store     store.ObjectStore
+	Database  db.Database
+	SizeLimit string
+}
+
 type blobsService struct {
 	*base.Base
-	Store store.ObjectStore
+	Store    store.ObjectStore
+	Database db.Database
 }
 
 // newBlobsService returns an HTTP interface for blobs
-func newBlobsService(base *base.Base, store store.ObjectStore, sizeLimit string) *blobsService {
+func newBlobsService(opts blobsServiceOpts) *blobsService {
 
-	svc := &blobsService{Base: base, Store: store}
+	svc := &blobsService{
+		Base:     opts.Base,
+		Store:    opts.Store,
+		Database: opts.Database,
+	}
 
 	group := svc.Echo.Group("/blobs")
 	group.Use(svc.JWTMiddleware())
-	group.Use(middleware.BodyLimit(sizeLimit))
+	group.Use(middleware.BodyLimit(opts.SizeLimit))
 	group.GET("", svc.List)
 	group.GET("/*", svc.Get)
 	group.PUT("/*", svc.Put)
@@ -41,28 +54,11 @@ func newBlobsService(base *base.Base, store store.ObjectStore, sizeLimit string)
 	return svc
 }
 
-func (svc *blobsService) getBlobWithPath(path string) (*Blob, error) {
-	blob := &Blob{}
-	if err := svc.DB.Where("path = ?", path).First(blob).Error; err != nil {
-		return nil, err
-	}
-	return blob, nil
-}
-
-func (svc *blobsService) updateBlob(blob *Blob) error {
-	fields := []string{"name", "extension", "properties"}
-	return svc.DB.Model(blob).Select(fields).Updates(blob).Error
-}
-
-func (svc *blobsService) saveBlob(blob *Blob) error {
-	return svc.DB.Save(blob).Error
-}
-
 func (svc *blobsService) Get(c echo.Context) error {
 
 	// Look up blob at the specified path
 	path := "/" + c.ParamValues()[0]
-	blob, err := svc.getBlobWithPath(path)
+	blob, err := svc.Database.Get(path)
 	if err != nil {
 		log.Infof("404 error: %+v", reflect.TypeOf(err))
 		if err.Error() == "record not found" {
@@ -99,7 +95,7 @@ func (svc *blobsService) Put(c echo.Context) error {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
 
-	blob, err := svc.getBlobWithPath(path)
+	blob, err := svc.Database.Get(path)
 	if err != nil {
 		return c.JSON(NotFound, errorView{"Not found"})
 	}
@@ -113,7 +109,7 @@ func (svc *blobsService) Put(c echo.Context) error {
 	blob.Properties = postgres.Jsonb{RawMessage: json.RawMessage(propJSON)}
 
 	fields := []string{"name", "properties"}
-	if err := svc.DB.Model(blob).Select(fields).Updates(blob).Error; err != nil {
+	if err := svc.Database.Update(blob, fields); err != nil {
 		log.WithError(err).Error("Failed to update blob")
 		return c.JSON(InternalServerError, errorView{"Failed to update blob"})
 	}
@@ -139,7 +135,7 @@ func (svc *blobsService) Post(c echo.Context) error {
 	}
 
 	// Determine if a blob already exists at that path
-	blob, err := svc.getBlobWithPath(attrs.Path)
+	blob, err := svc.Database.Get(attrs.Path)
 	if err != nil {
 		if err.Error() != "record not found" {
 			log.WithError(err).Error("Get failed")
@@ -150,7 +146,7 @@ func (svc *blobsService) Post(c echo.Context) error {
 	// Create or update the blob
 	if blob == nil {
 
-		blob = &Blob{
+		blob = &db.Blob{
 			ID:         uid(),
 			Name:       attrs.Name,
 			Extension:  blobExt,
@@ -166,7 +162,7 @@ func (svc *blobsService) Post(c echo.Context) error {
 			"path": blob.Path,
 		}).Info("Creating blob")
 
-		if err := svc.saveBlob(blob); err != nil {
+		if err := svc.Database.Save(blob); err != nil {
 			log.WithError(err).Error("Save failed")
 			return c.JSON(InternalServerError, errorView{"Save failed"})
 		}
@@ -181,7 +177,9 @@ func (svc *blobsService) Post(c echo.Context) error {
 			"path": blob.Path,
 		}).Info("Updating blob")
 
-		if err := svc.updateBlob(blob); err != nil {
+		fields := []string{"name", "extension", "properties"}
+
+		if err := svc.Database.Update(blob, fields); err != nil {
 			log.WithError(err).Error("Update failed")
 			return c.JSON(InternalServerError, errorView{"Update failed"})
 		}
@@ -238,8 +236,8 @@ func (svc *blobsService) Delete(c echo.Context) error {
 
 	// Look up blob at the specified path
 	path := "/" + c.ParamValues()[0]
-	blob := &Blob{}
-	if err := svc.DB.Where("path = ?", path).First(blob).Error; err != nil {
+	blob, err := svc.Database.Get(path)
+	if err != nil {
 		return c.JSON(NotFound, errorView{"Blob not found"})
 	}
 
@@ -250,7 +248,7 @@ func (svc *blobsService) Delete(c echo.Context) error {
 	}
 
 	// Remove database entry
-	if err := svc.DB.Delete(blob).Error; err != nil {
+	if err := svc.Database.Delete(blob); err != nil {
 		log.WithError(err).Error("Failed to delete blob")
 		return c.JSON(InternalServerError, errorView{"Failed to delete blob"})
 	}
@@ -273,7 +271,6 @@ func (svc *blobsService) List(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		return c.JSON(BadRequest, errorView{"Bad parameters"})
 	}
-
 	if params.Offset < 0 {
 		return c.JSON(BadRequest, errorView{"Invalid offset"})
 	}
@@ -287,16 +284,14 @@ func (svc *blobsService) List(c echo.Context) error {
 		params.OrderBy = "path"
 	}
 
-	context := &Blob{Context: ""}
+	query := db.Query{
+		Offset:  params.Offset,
+		Limit:   params.Limit,
+		OrderBy: params.OrderBy,
+		Context: "",
+	}
 
-	var blobs []*Blob
-
-	err := svc.DB.Where(context).
-		Order(params.OrderBy).
-		Offset(params.Offset).
-		Limit(params.Limit).
-		Find(&blobs).Error
-
+	blobs, err := svc.Database.List(query)
 	if err != nil {
 		log.WithError(err).Error("Blob query failed")
 		return c.JSON(InternalServerError, errorView{"Blob query failed"})
