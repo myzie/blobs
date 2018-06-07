@@ -4,7 +4,6 @@ package db
 
 // Query used to list Blobs
 type Query struct {
-	Context string
 	Offset  int
 	Limit   int
 	OrderBy string

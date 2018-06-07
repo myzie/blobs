@@ -36,11 +36,9 @@ func (db *standardDB) Update(blob *Blob, fields []string) error {
 // List Blobs matching the query
 func (db *standardDB) List(q Query) ([]*Blob, error) {
 
-	context := &Blob{Context: q.Context}
-
 	var blobs []*Blob
 
-	err := db.gormDB.Where(context).
+	err := db.gormDB.
 		Order(q.OrderBy).
 		Offset(q.Offset).
 		Limit(q.Limit).

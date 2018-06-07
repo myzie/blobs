@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -21,9 +22,6 @@ type Blob struct {
 	UpdatedAt  time.Time `gorm:"index"`
 	CreatedBy  string    `gorm:"size:50;index"`
 	UpdatedBy  string    `gorm:"size:50;index"`
-	Context    string    `gorm:"size:100;index"`
-	Name       string    `gorm:"size:100"`
-	Extension  string    `gorm:"size:100"`
 	Path       string    `gorm:"size:250;unique_index"`
 	Hash       string    `gorm:"size:250"`
 	Properties postgres.Jsonb
@@ -31,7 +29,12 @@ type Blob struct {
 
 // Key used when storing the blob
 func (b *Blob) Key() string {
-	return fmt.Sprintf("%s/%s/%s%s", b.Context, b.ID, b.ID, b.Extension)
+	return fmt.Sprintf("%s/%s%s", b.ID, b.ID, b.Extension())
+}
+
+// Extension of the file when uploaded
+func (b *Blob) Extension() string {
+	return filepath.Ext(b.Path)
 }
 
 // Validate the blob
@@ -41,20 +44,6 @@ func (b *Blob) Validate() []error {
 
 	fail := func(msg string) {
 		errs = append(errs, errors.New(msg))
-	}
-
-	// Context validation
-	if len(b.Context) == 0 {
-		fail("Invalid context: empty")
-	}
-
-	// Name validation
-	if len(b.Name) == 0 {
-		fail("Invalid name: empty")
-	} else if len(b.Name) > 100 {
-		fail("Invalid name: too long")
-	} else if !nameRegex.MatchString(b.Name) {
-		fail("Invalid name: unsupported characters")
 	}
 
 	// Path validation

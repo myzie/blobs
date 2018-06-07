@@ -1,9 +1,13 @@
 set -e
-FILE=$1
+
+STORAGE_PATH=$1
+
+FILE=$2
 FILE_NAME=$(basename "${FILE}")
 FILE_SIZE=$(wc -c <"${FILE}" | tr -d '[:space:]')
+
 curl -s                                   \
-  -F "name=${FILE_NAME}"                  \
+  -F "path=${STORAGE_PATH}"               \
   -F "size=${FILE_SIZE}"                  \
   -F "file=@${FILE}"                      \
   -X POST                                 \
