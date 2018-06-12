@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"reflect"
 
 	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/labstack/echo"
@@ -61,7 +60,6 @@ func (svc *blobsService) Get(c echo.Context) error {
 	path := "/" + c.ParamValues()[0]
 	blob, err := svc.Database.Get(path)
 	if err != nil {
-		log.Infof("404 error: %+v", reflect.TypeOf(err))
 		if err.Error() == "record not found" {
 			return c.JSON(NotFound, errorView{"Blob not found"})
 		}
@@ -86,11 +84,21 @@ func (svc *blobsService) Get(c echo.Context) error {
 
 func (svc *blobsService) Put(c echo.Context) error {
 
-	path := "/" + c.ParamValues()[0]
+	// Require application/json
+	contentType := c.Request().Header.Get("Content-Type")
+	if contentType != "application/json" {
+		return c.JSON(BadRequest, errorView{"Only JSON is accepted"})
+	}
 
+	// Reject request if item does not exist
+	path := "/" + c.ParamValues()[0]
 	blob, err := svc.Database.Get(path)
 	if err != nil {
-		return c.JSON(NotFound, errorView{"Not found"})
+		if err.Error() == "record not found" {
+			return c.JSON(NotFound, errorView{"Blob not found"})
+		}
+		log.WithError(err).Error("Get failed")
+		return c.JSON(InternalServerError, errorView{"Failed to look up Blob"})
 	}
 
 	var props BlobProperties
