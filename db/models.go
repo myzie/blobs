@@ -23,7 +23,7 @@ type Blob struct {
 	CreatedBy  string    `gorm:"size:50;index"`
 	UpdatedBy  string    `gorm:"size:50;index"`
 	Path       string    `gorm:"size:250;unique_index"`
-	Hash       string    `gorm:"size:250"`
+	Size       int64
 	Properties postgres.Jsonb
 }
 

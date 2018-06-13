@@ -1,12 +1,11 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"path"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
@@ -70,7 +69,7 @@ func (svc *blobsService) Get(c echo.Context) error {
 	// Return the blob metadata if JSON content was requested
 	contentType := c.Request().Header.Get("Content-Type")
 	if contentType == "application/json" {
-		return c.JSON(OK, blob)
+		return c.JSON(OK, newBlobView(blob))
 	}
 
 	// Otherwise return the object itself
@@ -112,7 +111,6 @@ func (svc *blobsService) Put(c echo.Context) error {
 	if len(propJSON) > db.MaxPropertiesSize {
 		return c.JSON(BadRequest, errorView{"Properties too large"})
 	}
-
 	blob.Properties = postgres.Jsonb{RawMessage: json.RawMessage(propJSON)}
 
 	fields := []string{"properties"}
@@ -120,26 +118,28 @@ func (svc *blobsService) Put(c echo.Context) error {
 		log.WithError(err).Error("Failed to update blob")
 		return c.JSON(InternalServerError, errorView{"Failed to update blob"})
 	}
-	return c.JSON(OK, blob)
+	return c.JSON(OK, newBlobView(blob))
 }
 
 func (svc *blobsService) Post(c echo.Context) error {
+
+	user := c.Get("user").(*jwt.Token)
+	claims := user.Claims.(*base.JWTClaims)
+	userID := claims.Subject
 
 	var attrs BlobUploadAttributes
 	if err := c.Bind(&attrs); err != nil {
 		return c.JSON(BadRequest, errorView{"Failed to bind attributes"})
 	}
-
 	attrs.Normalize()
 	if err := attrs.Validate(); err != nil {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
-
-	blobExt := attrs.Extension()
 	propJSON, err := attrs.MarshalProperties()
 	if err != nil {
 		return c.JSON(BadRequest, errorView{"JSON error"})
 	}
+	pgrsJSON := postgres.Jsonb{RawMessage: json.RawMessage(propJSON)}
 
 	// Determine if a blob already exists at that path
 	blob, err := svc.Database.Get(attrs.Path)
@@ -148,21 +148,22 @@ func (svc *blobsService) Post(c echo.Context) error {
 			log.WithError(err).Error("Get failed")
 			return c.JSON(InternalServerError, errorView{"Blob lookup failed"})
 		}
-	}
-
-	// Create or update the blob
-	if blob == nil {
 
 		blob = &db.Blob{
 			ID:         uid(),
+			CreatedBy:  userID,
+			UpdatedBy:  userID,
 			Path:       attrs.Path,
-			Hash:       "", // TODO
-			Properties: postgres.Jsonb{RawMessage: json.RawMessage(propJSON)},
+			Size:       attrs.Size,
+			Properties: pgrsJSON,
 		}
 
 		log.WithFields(log.Fields{
-			"id":   blob.ID,
-			"path": blob.Path,
+			"id":         blob.ID,
+			"created_by": blob.CreatedBy,
+			"updated_by": blob.UpdatedBy,
+			"path":       blob.Path,
+			"size":       attrs.Size,
 		}).Info("Creating blob")
 
 		if err := svc.Database.Save(blob); err != nil {
@@ -170,16 +171,19 @@ func (svc *blobsService) Post(c echo.Context) error {
 			return c.JSON(InternalServerError, errorView{"Save failed"})
 		}
 	} else {
-
-		blob.Properties = postgres.Jsonb{RawMessage: json.RawMessage(propJSON)}
+		blob.Size = attrs.Size
+		blob.Properties = pgrsJSON
+		blob.UpdatedBy = userID
 
 		log.WithFields(log.Fields{
-			"id":   blob.ID,
-			"path": blob.Path,
+			"id":         blob.ID,
+			"created_by": blob.CreatedBy,
+			"updated_by": blob.UpdatedBy,
+			"path":       blob.Path,
+			"size":       attrs.Size,
 		}).Info("Updating blob")
 
-		fields := []string{"name", "extension", "properties"}
-
+		fields := []string{"properties", "size", "updated_by"}
 		if err := svc.Database.Update(blob, fields); err != nil {
 			log.WithError(err).Error("Update failed")
 			return c.JSON(InternalServerError, errorView{"Update failed"})
@@ -196,14 +200,10 @@ func (svc *blobsService) Post(c echo.Context) error {
 	}
 	defer src.Close()
 
-	sha256 := sha256.New()
-	reader := io.TeeReader(io.LimitReader(src, attrs.Size), sha256)
-
 	log.WithFields(log.Fields{
-		"extension":  blobExt,
-		"size":       attrs.Size,
-		"properties": attrs.Properties,
-		"key":        blob.Key(),
+		"id":   blob.ID,
+		"key":  blob.Key(),
+		"size": attrs.Size,
 	}).Info("Upload starting")
 
 	fileName := path.Base(attrs.Path)
@@ -211,8 +211,12 @@ func (svc *blobsService) Post(c echo.Context) error {
 	opts := minio.PutObjectOptions{
 		ContentType:        "application/octet-stream",
 		ContentDisposition: fmt.Sprintf(`attachment; filename="%s"`, fileName),
+		UserMetadata: map[string]string{
+			"id":   blob.ID,
+			"path": blob.Path,
+		},
 	}
-	n, err := svc.Store.Put(blob.Key(), reader, attrs.Size, opts)
+	n, err := svc.Store.Put(blob.Key(), src, attrs.Size, opts)
 	if err != nil {
 		log.WithError(err).Error("Error saving file to bucket")
 		return c.JSON(InternalServerError, errorView{"Error saving file"})
@@ -222,15 +226,13 @@ func (svc *blobsService) Post(c echo.Context) error {
 		return c.JSON(InternalServerError, errorView{"Error saving file"})
 	}
 
-	sha256Hash := fmt.Sprintf("%x", sha256.Sum(nil))
-
 	log.WithFields(log.Fields{
-		"key":    attrs.Key(),
-		"size":   attrs.Size,
-		"sha256": sha256Hash,
+		"id":   blob.ID,
+		"key":  attrs.Key(),
+		"size": attrs.Size,
 	}).Info("Upload complete")
 
-	return c.JSON(OK, errorView{})
+	return c.JSON(OK, newBlobView(blob))
 }
 
 func (svc *blobsService) Delete(c echo.Context) error {
