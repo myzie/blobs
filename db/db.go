@@ -4,9 +4,11 @@ package db
 
 // Query used to list Blobs
 type Query struct {
-	Offset  int
-	Limit   int
-	OrderBy string
+	Offset     int
+	Limit      int
+	OrderBy    string
+	Context    string
+	PathPrefix string
 }
 
 // Database holding Blob metadata

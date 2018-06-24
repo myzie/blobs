@@ -46,7 +46,6 @@ func newBlobsService(opts blobsServiceOpts) *blobsService {
 	group.Use(middleware.BodyLimit(opts.SizeLimit))
 	group.GET("", svc.List)
 	group.GET("/*", svc.Get)
-	group.PUT("/*", svc.Put)
 	group.POST("", svc.Post)
 	group.DELETE("/*", svc.Delete)
 
@@ -54,6 +53,11 @@ func newBlobsService(opts blobsServiceOpts) *blobsService {
 }
 
 func (svc *blobsService) Get(c echo.Context) error {
+
+	// Access context from either:
+	// A) the JWT
+	// B) an API key mapping
+	// C) the query string
 
 	// Look up blob at the specified path
 	path := "/" + c.ParamValues()[0]
@@ -81,46 +85,6 @@ func (svc *blobsService) Get(c echo.Context) error {
 	return c.Stream(OK, "application/octet-stream", obj)
 }
 
-func (svc *blobsService) Put(c echo.Context) error {
-
-	// Require application/json
-	contentType := c.Request().Header.Get("Content-Type")
-	if contentType != "application/json" {
-		return c.JSON(BadRequest, errorView{"Only JSON is accepted"})
-	}
-
-	// Reject request if item does not exist
-	path := "/" + c.ParamValues()[0]
-	blob, err := svc.Database.Get(path)
-	if err != nil {
-		if err.Error() == "record not found" {
-			return c.JSON(NotFound, errorView{"Blob not found"})
-		}
-		log.WithError(err).Error("Get failed")
-		return c.JSON(InternalServerError, errorView{"Failed to look up Blob"})
-	}
-
-	var props BlobProperties
-	if err := c.Bind(&props); err != nil {
-		return c.JSON(BadRequest, errorView{"Bad properties"})
-	}
-	propJSON, err := json.Marshal(props.Properties)
-	if err != nil {
-		return c.JSON(BadRequest, errorView{"Bad properties"})
-	}
-	if len(propJSON) > db.MaxPropertiesSize {
-		return c.JSON(BadRequest, errorView{"Properties too large"})
-	}
-	blob.Properties = postgres.Jsonb{RawMessage: json.RawMessage(propJSON)}
-
-	fields := []string{"properties"}
-	if err := svc.Database.Update(blob, fields); err != nil {
-		log.WithError(err).Error("Failed to update blob")
-		return c.JSON(InternalServerError, errorView{"Failed to update blob"})
-	}
-	return c.JSON(OK, newBlobView(blob))
-}
-
 func (svc *blobsService) Post(c echo.Context) error {
 
 	user := c.Get("user").(*jwt.Token)
@@ -135,6 +99,8 @@ func (svc *blobsService) Post(c echo.Context) error {
 	if err := attrs.Validate(); err != nil {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
+
+	// TODO: allow no properties
 	propJSON, err := attrs.MarshalProperties()
 	if err != nil {
 		return c.JSON(BadRequest, errorView{"JSON error"})
@@ -189,6 +155,8 @@ func (svc *blobsService) Post(c echo.Context) error {
 			return c.JSON(InternalServerError, errorView{"Update failed"})
 		}
 	}
+
+	// TODO: allow no file to be attached
 
 	file, err := c.FormFile("file")
 	if err != nil {

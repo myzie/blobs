@@ -3,38 +3,31 @@ package db
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
-	"regexp"
 	"time"
 
 	"github.com/jinzhu/gorm/dialects/postgres"
 )
 
 // MaxPropertiesSize specifies the max size in bytes for Blob properties
-const MaxPropertiesSize = 10 * 1024
-
-var nameRegex = regexp.MustCompile(`^[0-9A-Za-z_][A-Za-z0-9-_ ]*(\.[a-zA-Z0-9]+)?$`)
+const MaxPropertiesSize = 4 * 1024
 
 // Blob is a stored object
 type Blob struct {
-	ID         string    `gorm:"size:50;primary_key;unique_index"`
+	ID         string    `gorm:"size:64;primary_key;unique_index"`
 	CreatedAt  time.Time `gorm:"index"`
 	UpdatedAt  time.Time `gorm:"index"`
-	CreatedBy  string    `gorm:"size:50;index"`
-	UpdatedBy  string    `gorm:"size:50;index"`
-	Path       string    `gorm:"size:250;unique_index"`
+	CreatedBy  string    `gorm:"size:64;index"`
+	UpdatedBy  string    `gorm:"size:64;index"`
+	Context    string    `gorm:"size:64;index"`
+	Name       string    `gorm:"size:128"`
+	Path       string    `gorm:"size:256;unique_index"`
 	Size       int64
 	Properties postgres.Jsonb
 }
 
 // Key used when storing the blob
 func (b *Blob) Key() string {
-	return fmt.Sprintf("%s/%s%s", b.ID, b.ID, b.Extension())
-}
-
-// Extension of the file when uploaded
-func (b *Blob) Extension() string {
-	return filepath.Ext(b.Path)
+	return fmt.Sprintf("%s/%s", b.Context, b.Path)
 }
 
 // Validate the blob
@@ -46,7 +39,27 @@ func (b *Blob) Validate() []error {
 		errs = append(errs, errors.New(msg))
 	}
 
-	// Path validation
+	if b.ID == "" {
+		fail("Invalid id: empty")
+	}
+	if b.Context == "" {
+		fail("Invalid context: empty")
+	}
+	if b.CreatedBy == "" {
+		fail("Invalid created_at: empty")
+	}
+	if b.UpdatedBy == "" {
+		fail("Invalid updated_at: empty")
+	}
+	if b.Size < 0 {
+		fail("Invalid size: negative")
+	}
+
+	if len(b.Name) > 100 {
+		fail("Invalid name: too long")
+	}
+
+	// TODO: path regex?
 	if len(b.Path) == 0 {
 		fail("Invalid path: empty")
 	} else if len(b.Path) > 200 {
@@ -55,11 +68,9 @@ func (b *Blob) Validate() []error {
 		fail("Invalid path: does not start with /")
 	}
 
-	propBytes := []byte(b.Properties.RawMessage)
-	if len(propBytes) > MaxPropertiesSize {
+	if len(b.Properties.RawMessage) > MaxPropertiesSize {
 		fail("Invalid properties: too large")
 	}
-
 	return errs
 }
 
