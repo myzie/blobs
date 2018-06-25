@@ -1,7 +1,6 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -11,18 +10,39 @@ import (
 // MaxPropertiesSize specifies the max size in bytes for Blob properties
 const MaxPropertiesSize = 4 * 1024
 
-// Blob is a stored object
-type Blob struct {
+// Model base for any type saved to the database
+type Model struct {
 	ID         string    `gorm:"size:64;primary_key;unique_index"`
 	CreatedAt  time.Time `gorm:"index"`
 	UpdatedAt  time.Time `gorm:"index"`
 	CreatedBy  string    `gorm:"size:64;index"`
 	UpdatedBy  string    `gorm:"size:64;index"`
-	Context    string    `gorm:"size:64;index"`
 	Name       string    `gorm:"size:128"`
-	Path       string    `gorm:"size:256;unique_index"`
-	Size       int64
 	Properties postgres.Jsonb
+}
+
+// Blob is a stored object
+type Blob struct {
+	Model
+	Context string `gorm:"size:64;index"`
+	Path    string `gorm:"size:256;unique_index"`
+	Size    int64
+}
+
+// User information including email
+type User struct {
+	Model
+	Email string `gorm:"size:320"`
+}
+
+// Group of Users
+type Group struct {
+	Model
+}
+
+// Context is a logical container for Blobs
+type Context struct {
+	Model
 }
 
 // Key used when storing the blob
@@ -30,55 +50,40 @@ func (b *Blob) Key() string {
 	return fmt.Sprintf("%s/%s", b.Context, b.Path)
 }
 
-// Validate the blob
-func (b *Blob) Validate() []error {
-
-	var errs []error
-
-	fail := func(msg string) {
-		errs = append(errs, errors.New(msg))
-	}
+// BeforeSave is called to validate the model before saving to the database
+func (b *Blob) BeforeSave() error {
 
 	if b.ID == "" {
-		fail("Invalid id: empty")
+		return fmt.Errorf("Invalid id: empty")
 	}
 	if b.Context == "" {
-		fail("Invalid context: empty")
+		return fmt.Errorf("Invalid context: empty")
 	}
 	if b.CreatedBy == "" {
-		fail("Invalid created_at: empty")
+		return fmt.Errorf("Invalid created_at: empty")
 	}
 	if b.UpdatedBy == "" {
-		fail("Invalid updated_at: empty")
+		return fmt.Errorf("Invalid updated_at: empty")
 	}
 	if b.Size < 0 {
-		fail("Invalid size: negative")
+		return fmt.Errorf("Invalid size: negative")
 	}
 
 	if len(b.Name) > 100 {
-		fail("Invalid name: too long")
+		return fmt.Errorf("Invalid name: too long")
 	}
 
 	// TODO: path regex?
 	if len(b.Path) == 0 {
-		fail("Invalid path: empty")
+		return fmt.Errorf("Invalid path: empty")
 	} else if len(b.Path) > 200 {
-		fail("Invalid path: too long")
+		return fmt.Errorf("Invalid path: too long")
 	} else if b.Path[0] != '/' {
-		fail("Invalid path: does not start with /")
+		return fmt.Errorf("Invalid path: does not start with /")
 	}
 
 	if len(b.Properties.RawMessage) > MaxPropertiesSize {
-		fail("Invalid properties: too large")
-	}
-	return errs
-}
-
-// BeforeSave is called as the Blob is being saved to the database
-func (b *Blob) BeforeSave() error {
-	errs := b.Validate()
-	if errs != nil {
-		return errs[0]
+		return fmt.Errorf("Invalid properties: too large")
 	}
 	return nil
 }

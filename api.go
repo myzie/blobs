@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"path"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -99,8 +100,6 @@ func (svc *blobsService) Post(c echo.Context) error {
 	if err := attrs.Validate(); err != nil {
 		return c.JSON(BadRequest, errorView{err.Error()})
 	}
-
-	// TODO: allow no properties
 	propJSON, err := attrs.MarshalProperties()
 	if err != nil {
 		return c.JSON(BadRequest, errorView{"JSON error"})
@@ -162,6 +161,12 @@ func (svc *blobsService) Post(c echo.Context) error {
 	if err != nil {
 		return c.JSON(BadRequest, errorView{"Form file missing"})
 	}
+
+	return c.JSON(OK, newBlobView(blob))
+}
+
+func (svc *blobsService) saveFile(c echo.Context, blob *models.Blob, hdr *multipart.FileHeader) error {
+
 	src, err := file.Open()
 	if err != nil {
 		return c.JSON(BadRequest, errorView{"Form file error"})
@@ -196,11 +201,9 @@ func (svc *blobsService) Post(c echo.Context) error {
 
 	log.WithFields(log.Fields{
 		"id":   blob.ID,
-		"key":  attrs.Key(),
+		"key":  blob.Key(),
 		"size": attrs.Size,
 	}).Info("Upload complete")
-
-	return c.JSON(OK, newBlobView(blob))
 }
 
 func (svc *blobsService) Delete(c echo.Context) error {

@@ -11,21 +11,25 @@ type Query struct {
 	PathPrefix string
 }
 
+// Key used to look up a Blob
+type Key struct {
+	ID      string
+	Context string
+	Path    string
+}
+
 // Database holding Blob metadata
 type Database interface {
 
-	// Get a Blob with the given path
-	Get(path string) (*Blob, error)
+	// Get a Blob using the key
+	Get(Key) (*Blob, error)
 
 	// Save the Blob to the Database which updates all its fields
 	Save(*Blob) error
 
-	// Update the specified Blob fields
-	Update(*Blob, []string) error
+	// Delete the Blob from the Database
+	Delete(*Blob) error
 
 	// List Blobs matching the query
 	List(Query) ([]*Blob, error)
-
-	// Delete the Blob from the Database
-	Delete(*Blob) error
 }

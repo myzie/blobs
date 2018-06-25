@@ -1,18 +1,37 @@
-# blobs
+# Blobs
 
-Authenticated object store with a multi-provider object storage backing.
+Datastore for binary objects with properties. Backed by any S3 compatible
+object store along with Postgresql for queries and storing object properties.
 
 ## API
 
-Blobs are stored at a logical path.
+Each object has a unique path within its operating context. Context is somewhat
+similar to an S3 bucket in this way.
 
-## Internal Operating Principles
+Objects may have an associated JSON `properties` object. The properties objects
+are currently schemaless however schemas and validations may be added as
+options, somewhat like Firebase. Fast searches on values within the JSON are
+easily added via Postgresql's secondary indexes on JSONB.
 
- * On upload, the `name` field determines the blob name and extension.
-   Subsequently, the extension remains fixed but the name can be changed
-   including removing the extension.
- * Blob properties are set with a `PUT` after the blob is uploaded or in
-   the upload `POST` request.
- * Objects are stored internally at `<bucket>/<blobid>/<blobid>.<ext>`.
-   The name is stored in the database and in the `ContentDisposition` field.
-   This makes a rename a quick operation.
+Using a POST request, clients may upload an object and associated properties in
+a single request. The object or the properties may be provided individually as
+well.
+
+Behind the scenes, objects are stored in S3 in a fixed bucket with a key
+corresponding to the specified object `path`. The `path` field cannot be updated
+after the object is created. As a future enhancement, consider a `move` or
+`copy` operation to switch to a new path assuming it is not already in use.
+
+When the object is downloaded an alternate name can be set via the HTTP header:
+`Content-Disposition: attachment; filename=FILENAME`.
+
+Potentially the `name` field on the object, stored in Postgres, can be set
+automatically upon download. If `name` is blank, the basename from the `path`
+will be used.
+
+Authentication is via JWTs and potentially API keys in the future. The JWT may
+optionally include the authorized `context`. Although, if a simple authorization
+scheme is implemented here that may not be desired.
+
+It is an external choice how to allocate paths and contexts to best suit the
+application at hand.
