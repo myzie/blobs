@@ -64,9 +64,55 @@ empty collection for items at the root level.
 Use YAML or JSON or Javascript for declaritive rules? Could probably use a DSL
 down the road. Rules could extract items from JWT claims among other things.
 
-Concepts
+Need to define conflict resolution policy. Simple last write wins? Lexical
+sorting or some other deterministic algorithm to choose the winner. Let postgres
+handle some amount of this?
+
+Need to offer customizable queries?
+
+Continuing to work in an "offline" mode seems popular in open source attempts.
+This seems unnecesary.
+
+Clients need to subscribe to collection changes?
+
+Item versioning?
+
+Storage quotas?
+
+Data structures?
+
+Possible inspiration: http://paraio.org/docs/
+
+ * Database
+ * Search engine
+ * Cache
+
+Another inspiration: https://deepstreamhub.com/open-source/?io
+
+ * Records (schema-less documents that can be manipulated and observed)
+ * Events (publish-subscribe messaging; topic based routing)
+ * RPCs (secure, load balancing, fail-over, routing)
+ * Database connectors
+ * Cache connectors
+ * Records can reference each other and be arranged in lists
+
+"Deepstream uses a powerful permission language called Valve that allow for the
+creation of granular rulesets, data references and even realtime permission
+adjustments."
+
+Reference:
+
+ * http://kinto.readthedocs.io/en/latest/overview.html
+ * https://feathersjs.com/
+
+### Concepts
 
  * Items: each has a path, JSON properties, optional attachment
  * Validations: ensure items adhere to schema. Could validate attachments too.
- * Permissions: define authorization for individual items or collections.
+ * Permissions: define R/W authorization for individual items or collections.
+ * Operations: named mutators that affect the items. Have associated permissions.
  * Principal: the user making requests to the service. Identity from JWT.
+ * Limits: restrictions on collection size, total attachment size, etc.
+ * Subscriptions: feeds that stream updates to clients. 
+ * Filters: reduce items returned when retrieving a collection.
+ * Metrics: stats on all the above
