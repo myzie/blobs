@@ -63,3 +63,10 @@ empty collection for items at the root level.
 
 Use YAML or JSON or Javascript for declaritive rules? Could probably use a DSL
 down the road. Rules could extract items from JWT claims among other things.
+
+Concepts
+
+ * Items: each has a path, JSON properties, optional attachment
+ * Validations: ensure items adhere to schema. Could validate attachments too.
+ * Permissions: define authorization for individual items or collections.
+ * Principal: the user making requests to the service. Identity from JWT.
