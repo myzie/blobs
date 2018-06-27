@@ -35,3 +35,31 @@ scheme is implemented here that may not be desired.
 
 It is an external choice how to allocate paths and contexts to best suit the
 application at hand.
+
+## Fireblob
+
+Everything is objects stored at a path.
+
+GET on /an/item returns the item.
+
+GET on /a/collection/ returns the collection. Trailing slash distinguishes?
+
+Each items may have an attached binary file which will be stored in S3.
+
+Declarative rules for validations and R/W access.
+
+Build users, roles, groups, etc. with the same scheme. They are just other
+collections that exist in the system.
+
+Keep core service independent of API specifics like HTTP vs. websocket.
+
+Need to evaluate how fast Postgres querires are to support this? Use LIKE to
+find items starting with a prefix. Will that be performant enough?
+
+Perhaps require top-level collections, that way the collection can be indexed
+and used in a WHERE clause to quickly cull the results. Or could automatically
+split first segment from path to use as the collection. Could be an implicit
+empty collection for items at the root level.
+
+Use YAML or JSON or Javascript for declaritive rules? Could probably use a DSL
+down the road. Rules could extract items from JWT claims among other things.

@@ -29,22 +29,6 @@ type Blob struct {
 	Size    int64
 }
 
-// User information including email
-type User struct {
-	Model
-	Email string `gorm:"size:320"`
-}
-
-// Group of Users
-type Group struct {
-	Model
-}
-
-// Context is a logical container for Blobs
-type Context struct {
-	Model
-}
-
 // Key used when storing the blob
 func (b *Blob) Key() string {
 	return fmt.Sprintf("%s/%s", b.Context, b.Path)
