@@ -117,3 +117,7 @@ Reference:
  * Filters: reduce items returned when retrieving a collection.
  * Metrics: stats on all the above
  * Triggers: scripts that execute on a defined condition/event.
+ * Views: item transformations
+ * Inputs: schema-defined objects from the app. Update items or for operations.
+
+Item metadata vs. properties. Metadata is automatically filled in.
