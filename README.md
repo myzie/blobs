@@ -116,3 +116,4 @@ Reference:
  * Subscriptions: feeds that stream updates to clients. 
  * Filters: reduce items returned when retrieving a collection.
  * Metrics: stats on all the above
+ * Triggers: scripts that execute on a defined condition/event.
